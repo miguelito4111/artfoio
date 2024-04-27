@@ -137,17 +137,58 @@ class _ProfilesssssPage extends State<StatefulWidget> {
 
 
 
-
+Widget _buildCategoryTab(String category) {
+  return Column(
+    children: [
+      ElevatedButton(
+        onPressed: () => _pickAndUploadImage(category),
+        child: Text('Add Image'),
+      ),
+      Expanded(
+        child: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('images')
+            .where('category', isEqualTo: category)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CircularProgressIndicator());
+          } else if (snapshot.hasError) {
+            return Center(child: Text('Error fetching images.'));
+          } else if (snapshot.hasData) {
+            return GridView.builder(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                crossAxisSpacing: 4.0,
+                mainAxisSpacing: 4.0,
+              ),
+              itemCount: snapshot.data!.docs.length,
+              itemBuilder: (context, index) {
+                var image = snapshot.data!.docs[index];
+                return Image.network(image['url'], fit: BoxFit.cover);
+              },
+            );
+          } else {
+            return Center(child: Text('No images to display.'));
+          }
+        },
+        ),
+      ),
+    ],
+  );
+}
+          
+        
   Widget _buildPhotographsTab() {
-    return Center(child: Text("Photographs"));
+  return _buildCategoryTab("Photographs");
   }
 
   Widget _buildPaintingsTab() {
-    return Center(child: Text("Paintings"));
+    return _buildCategoryTab("Paintings");
   }
 
   Widget _buildSculpturesTab() {
-    return Center(child: Text("Sculptures"));
+    return _buildCategoryTab("Sculptures");
   }
 
   void _checkProfileCompletion() async {
@@ -237,7 +278,36 @@ Future<String> _uploadImageToFirebase() async {
   final TaskSnapshot downloadUrl = await uploadTask;
   return await downloadUrl.ref.getDownloadURL();
 }
+void _pickAndUploadImage(String category) async {
+  final ImagePicker picker = ImagePicker();
+  final XFile? image = await picker.pickImage(source: ImageSource.gallery);
 
+  if (image != null) {
+    File imageFile = File(image.path);
+    // Upload image to Firebase
+    String imageUrl = await _uploadImageToCategoryFirebase(imageFile, category);
+    // Add imageURL to Firestore under the specific category
+    _addImageToFirestore(imageUrl, category);
+  }
+}
+
+Future<String> _uploadImageToCategoryFirebase(File imageFile, String category) async {
+  String userId = FirebaseAuth.instance.currentUser!.uid;
+  FirebaseStorage storage = FirebaseStorage.instance;
+  Reference ref = storage.ref().child('$category/$userId/${DateTime.now().millisecondsSinceEpoch}');
+  UploadTask uploadTask = ref.putFile(imageFile);
+  final TaskSnapshot downloadUrl = await uploadTask;
+  return await downloadUrl.ref.getDownloadURL();
+}
+
+void _addImageToFirestore(String imageUrl, String category) {
+  FirebaseFirestore.instance.collection('images').add({
+    'url': imageUrl,
+    'category': category,
+    'uploadedBy': FirebaseAuth.instance.currentUser!.uid,
+    'timestamp': FieldValue.serverTimestamp(),
+  });
+}
 
 }
 
