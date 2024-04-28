@@ -150,28 +150,48 @@ Widget _buildCategoryTab(String category) {
             .collection('images')
             .where('category', isEqualTo: category)
             .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
-          } else if (snapshot.hasError) {
-            return Center(child: Text('Error fetching images.'));
-          } else if (snapshot.hasData) {
-            return GridView.builder(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                crossAxisSpacing: 4.0,
-                mainAxisSpacing: 4.0,
-              ),
-              itemCount: snapshot.data!.docs.length,
-              itemBuilder: (context, index) {
-                var image = snapshot.data!.docs[index];
-                return Image.network(image['url'], fit: BoxFit.cover);
-              },
-            );
-          } else {
-            return Center(child: Text('No images to display.'));
-          }
-        },
+        builder: (BuildContext context, AsyncSnapshot snapshot) {
+  if (snapshot.connectionState == ConnectionState.waiting) {
+    return Center(child: CircularProgressIndicator());
+} else if (snapshot.hasError) {
+    return Center(child: Text('Error: ${snapshot.error}'));
+} else if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
+    return GridView.builder(
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 4.0,
+        mainAxisSpacing: 4.0,
+      ),
+      itemCount: snapshot.data!.docs.length,
+      itemBuilder: (context, index) {
+  var doc = snapshot.data!.docs[index].data();
+  var artistName = doc['artistName'] ?? 'Unknown Artist'; // Default value if null
+  var imageUrl = doc['url'] as String;
+
+  return Column(
+    children: [
+      Text(artistName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+      SizedBox(height: 8),
+      GestureDetector(
+        onTap: () => _showImageDialog(context, imageUrl),
+        child: Container(
+          height: 90, // Adjust based on your UI needs
+          width: double.infinity,
+          child: Image.network(imageUrl, fit: BoxFit.cover),
+        ),
+      ),
+    ],
+  );
+},
+
+
+    );
+} else {
+    return Center(child: Text('No images to display.'));
+}
+
+}
+
         ),
       ),
     ],
@@ -217,6 +237,23 @@ void _pickImage() async {
     _uploadImageToFirebase();
   }
 }
+void _showImageDialog(BuildContext context, String imageUrl) {
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return Dialog(
+        child: Container(
+          padding: EdgeInsets.all(10), // Reduce padding if necessary
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8), // Max height for the image
+          child: Image.network(imageUrl, fit: BoxFit.contain), // Use BoxFit.contain to fit the image within the container
+        ),
+      );
+    },
+  );
+}
+
+
+
 
 void _saveProfileInfo() async {
   String userId = FirebaseAuth.instance.currentUser!.uid;
@@ -279,17 +316,24 @@ Future<String> _uploadImageToFirebase() async {
   return await downloadUrl.ref.getDownloadURL();
 }
 void _pickAndUploadImage(String category) async {
+  if (artistNameController.text.isEmpty) {
+    // Handle the case where the artist name is not set
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text("Please set your artist name in your profile before uploading images."),
+      duration: Duration(seconds: 3),
+    ));
+    return;
+  }
+
   final ImagePicker picker = ImagePicker();
   final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-
   if (image != null) {
     File imageFile = File(image.path);
-    // Upload image to Firebase
     String imageUrl = await _uploadImageToCategoryFirebase(imageFile, category);
-    // Add imageURL to Firestore under the specific category
     _addImageToFirestore(imageUrl, category);
   }
 }
+
 
 Future<String> _uploadImageToCategoryFirebase(File imageFile, String category) async {
   String userId = FirebaseAuth.instance.currentUser!.uid;
@@ -301,13 +345,16 @@ Future<String> _uploadImageToCategoryFirebase(File imageFile, String category) a
 }
 
 void _addImageToFirestore(String imageUrl, String category) {
+  String artistName = artistNameController.text;
   FirebaseFirestore.instance.collection('images').add({
     'url': imageUrl,
     'category': category,
     'uploadedBy': FirebaseAuth.instance.currentUser!.uid,
+    'artistName': artistName,  // Assuming you have the artist's name available
     'timestamp': FieldValue.serverTimestamp(),
   });
 }
+
 
 }
 
