@@ -1,4 +1,4 @@
-# artfoio
+# artfolio
 
 A new Flutter project.
 
